@@ -2,11 +2,16 @@ import tkinter as tk
 import face_recognition
 import cv2
 import os
+import time
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 from tkinter import filedialog
+from tkinter.simpledialog import askstring
 
-file_dir = r'/home/neal/Picture/rrr'  # 已知人像的目录
+file_dir = r'/home/neal/Picture/knownpeople'  # 已知人像的目录
 main_dir = r'/home/neal/Picture/unknownpicture/hezhao.jpg'  # 主图人像文件
+
+face_known = []  # 已知人脸
+names = []  # 已知名字
 
 
 def get_people(file_dir):  # 获取已知人名
@@ -36,6 +41,84 @@ def list_found(people_name):  # 列出在图片中找到的人像
         label_people[p].place(relx=1 / (2 * people_num + 1) * (2 * p + 1), rely=0.6)
 
 
+def b_choose_main():
+    global main_dir
+    main_dir = filedialog.askopenfilename()  # 主图人脸的目录
+
+
+def b_choose_dir():
+    global file_dir
+    file_dir = filedialog.askdirectory()  # 已知人脸的目录
+    get_face()
+    print(file_dir)
+
+
+def main_reco():
+    pic_main = face_recognition.load_image_file(main_dir)
+    loc_main = face_recognition.face_locations(pic_main)
+
+    global face_names
+    global photo_main
+
+    face_names.clear()
+    face_main = face_recognition.face_encodings(pic_main)
+    for face in face_main:
+        name = 'Unknown'
+        for i in range(len(face_known)):
+            matches = face_recognition.compare_faces(face_known[i], face, tolerance=0.38)
+            # print('matches:', matches)
+            if True in matches:
+                name = names[i]
+        face_names.append(name)
+
+    print(face_names)
+
+    cv_img = cv2.imread(main_dir)
+    text_size = 1
+    ratio = 1
+    if cv_img.shape[1] * 0.6 < cv_img.shape[1]:
+        ratio = cv_img.shape[0] / 840
+        text_size = cv_img.shape[0] / 720 + 1
+    else:
+        ratio = cv_img.shape[1] / 1400
+        text_size = cv_img.shape[1] / 1200 + 1
+
+    for i in range(len(face_names)):
+        cv2.rectangle(cv_img, (loc_main[i][3] - 3, loc_main[i][0] - 3), (loc_main[i][1] + 2, loc_main[i][2] + 2),
+                      (255, 0, 255), int(text_size))
+        if face_names[i] != 'Unknown':
+            cv2.putText(cv_img, face_names[i].split('.')[0], (loc_main[i][3] - 2, loc_main[i][0] - 20),
+                        cv2.FONT_HERSHEY_DUPLEX, text_size / 2, (255, 0, 255), thickness=int(text_size))
+
+    photo_main = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)).resize(
+        (int(cv_img.shape[1] / ratio), int(cv_img.shape[0] / ratio))))
+    label_main.config(image=photo_main)
+    label_main.image = photo_main
+
+
+def get_face():
+    global face_known
+    global names
+    face_known.clear()
+    names.clear()
+    names = get_people(file_dir)  # 获取已知人脸
+    names_num = len(names)
+    n = 0
+    while n < names_num:
+        pic_known = face_recognition.load_image_file(r'{}/{}'.format(file_dir, names[n]))
+        temp_face = face_recognition.face_encodings(pic_known)
+        if len(temp_face) == 1:
+            face_known.append(temp_face)
+            n += 1
+        else:
+            print('{}无法找到主角人像'.format(names[n]))
+            names.remove(names[n])
+            names_num = len(names)
+
+    print('names len:', len(names))
+    print('faces len:', len(face_known))
+
+
 windowWidth = 1920
 windowHeight = 1080
 screenWidth = 1920
@@ -52,85 +135,73 @@ Window = tk.Tk()
 Window.title('一个简单的窗口')
 Window.geometry(geometrySize)
 
-face_known = []  # 已知人脸
-names = get_people(file_dir)  # 获取已知人脸
-names_num = len(names)
-n = 0
-while n < names_num:
-    pic_known = face_recognition.load_image_file(r'{}/{}'.format(file_dir, names[n]))
-    temp_face = face_recognition.face_encodings(pic_known)
-    if len(temp_face) == 1:
-        face_known.append(temp_face)
-        n += 1
-    else:
-        print('{}无法找到主角人像'.format(names[n]))
-        names.remove(names[n])
-        names_num = len(names)
-
-print('names len:', len(names))
-print('faces len:', len(face_known))
-
-face_cor = []  # 主图人脸坐标
-pic_main = face_recognition.load_image_file(main_dir)
-loc_main = face_recognition.face_locations(pic_main)
-for i in loc_main:
-    face_cor.append(i)
-
+photo_main = None
 face_names = []
-face_main = face_recognition.face_encodings(pic_main)
-for face in face_main:
-    name = 'Unknown'
-    for i in range(len(face_known)):
-        matches = face_recognition.compare_faces(face_known[i], face, tolerance=0.39)
-        # print('matches:', matches)
-        if True in matches:
-            name = names[i]
-    face_names.append(name)
 
-print(face_names)
 
-#print(filedialog.askopenfilename())
+def b_take_face():
+    inp_name = askstring("请输入你的名字", "姓名：")
+    print(inp_name)
+    if inp_name is None or inp_name == '':
+        return
+    print('what', inp_name)
+    video_capture = cv2.VideoCapture(0)
+    cv2.namedWindow("press space to take, r to retake", cv2.WINDOW_AUTOSIZE)
+    while True:
+        ret, frame = video_capture.read()
+        cv2.imshow("press space to take, r to retake", frame)
+        k = cv2.waitKey(1)
+        if k == 32:
+            cv2.imshow("press space to take, r to retake", frame)
+            k = cv2.waitKey(3000)
+            if k != ord('r') and k != ord('R'):
+                cv2.imwrite(file_dir + '/{}.jpg'.format(inp_name), frame)
+                print(file_dir + '/{}.jpg'.format(inp_name))
+                video_capture.release()
+                cv2.destroyAllWindows()
+                get_face()
+                break
+        if k == ord('Q') or k == ord('q'):
+            video_capture.release()
+            cv2.destroyAllWindows()
+            return
 
-cv_img = cv2.imread(main_dir)
-text_size = 1
-ratio = 1
-if cv_img.shape[1] * 0.6 < cv_img.shape[1]:
-    ratio = cv_img.shape[0] / 600
-    text_size = cv_img.shape[0] / 720 + 1
-else:
-    ratio = cv_img.shape[1] / 1000
-    text_size = cv_img.shape[1] / 1200 + 1
 
-for i in range(len(face_names)):
-    cv2.rectangle(cv_img, (loc_main[i][3] - 3, loc_main[i][0] - 3), (loc_main[i][1] + 2, loc_main[i][2] + 2),
-                  (255, 0, 255), int(text_size))
-    if face_names[i] != 'Unknown':
-        cv2.putText(cv_img, face_names[i].split('.')[0], (loc_main[i][3] - 2, loc_main[i][0] - 20),
-                    cv2.FONT_HERSHEY_DUPLEX, text_size / 2, (255, 0, 255), thickness=int(text_size))
-# cv2.imwrite(r'/home/neal/Picture/unknownpicture/3_3.jpg', cv_img)
+def b_take_main():
+    global main_dir
+    video_capture = cv2.VideoCapture(0)
+    cv2.namedWindow("press space to take, r to retake", cv2.WINDOW_AUTOSIZE)
+    while True:
+        ret, frame = video_capture.read()
+        cv2.imshow("press space to take, r to retake", frame)
+        k = cv2.waitKey(1)
+        if k == 32:
+            cv2.imshow("press space to take, r to retake", frame)
+            k = cv2.waitKey(3000)
+            if k != ord('r') and k != ord('R'):
+                main_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                main_dir = os.path.dirname(main_dir) + '/{}.jpg'.format(main_time)
+                cv2.imwrite(main_dir, frame)
+                print(main_dir)
+                break
+        if k == ord('Q') or k == ord('q'):
+            break
+    video_capture.release()
+    cv2.destroyAllWindows()
 
-# img_main = Image.open(main_dir).resize((700, 420))  # 主图的读取与显示
 
-photo_main = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)).resize(
-    (int(cv_img.shape[1] / ratio), int(cv_img.shape[0] / ratio))))
-label_main = tk.Label(image=photo_main, width=1100, height=660)
-label_main.place(relx=0.5 - 550 / windowWidth, rely=0.02)
+choose_main = tk.Button(Window, text='选择识别主图文件', command=b_choose_main)
+choose_dir = tk.Button(Window, text='选择已知人脸目录', command=b_choose_dir)
+take_main = tk.Button(Window, text='录入识别主图文件', command=b_take_main)
+take_face = tk.Button(Window, text='录入人脸', command=b_take_face)
+reco_main = tk.Button(Window, text='开始识别', command=main_reco)
+label_main = tk.Label(Window, width=1200, height=720)
 
-img_known = []
-photo_known = []
-label_known = []
-label_name = []
-
-face_names_show = face_names.copy()
-while face_names_show.count('Unknown') != 0:
-    face_names_show.remove('Unknown')
-
-for i in range(len(face_names_show)):
-    img_known.append(Image.open('{}/{}'.format(file_dir, face_names_show[i])).resize((200, 250)))
-    photo_known.append(ImageTk.PhotoImage(img_known[i]))
-    label_known.append(tk.Label(image=photo_known[i], width=200, height=250))
-    label_known[i].place(relx=1 / (len(face_names_show) * 2 + 1) * (1 + i * 2), rely=0.72)
-    label_name.append(tk.Label(text=face_names_show[i].split('.')[0], font=('Arial', 15, 'normal')))
-    label_name[i].place(relx=1 / (len(face_names_show) * 2 + 1) * (1 + i * 2), rely=0.68)
+choose_main.place(relx=0.06, rely=0.1)
+choose_dir.place(relx=0.06, rely=0.2)
+take_face.place(relx=0.06, rely=0.3)
+take_main.place(relx=0.06, rely=0.4)
+reco_main.place(relx=0.06, rely=0.5)
+label_main.place(relx=0.53 - 600 / windowWidth, rely=0.05)
 
 Window.mainloop()
